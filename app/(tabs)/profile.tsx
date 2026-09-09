@@ -3,11 +3,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@/lib/authContext';
 
 export default function ProfileScreen() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>프로필</Text>
+      {user && <Text>{user.nickname} · {user.email}</Text>}
       <Pressable style={styles.button} onPress={logout}>
         <Text style={styles.buttonText}>로그아웃</Text>
       </Pressable>

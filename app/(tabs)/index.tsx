@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import {
@@ -11,31 +11,57 @@ import {
   View,
 } from 'react-native';
 
-import { getTodayQuiz, submitAnswer } from '@/api/quiz';
+import { ApiError } from '@/api/client';
+import { getTodayQuiz, newIdempotencyKey, submitAnswer } from '@/api/quiz';
 import { BlankAnswerPreview } from '@/components/BlankAnswerPreview';
-import type { AnswerResponse, Question } from '@/types/quiz';
+import type { Question } from '@/types/quiz';
 
 function openHint(url: string) {
   if (!/^https?:\/\//i.test(url)) return;
   WebBrowser.openBrowserAsync(url);
 }
 
+interface Outcome {
+  isCorrect: boolean;
+  explanation: string | null;
+  xpAwarded: number;
+}
+
+function outcomeOf(question: Question): Outcome | null {
+  if (!question.mySubmission) return null;
+  return {
+    isCorrect: question.mySubmission.isCorrect,
+    explanation: question.explanation,
+    xpAwarded: question.mySubmission.xpAwarded,
+  };
+}
+
 export default function TodayQuizScreen() {
-  const { data: quizSet, isLoading } = useQuery({
+  const queryClient = useQueryClient();
+  const { data: quizSet, isLoading, error } = useQuery({
     queryKey: ['today-quiz'],
     queryFn: getTodayQuiz,
+    retry: false,
   });
 
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answerText, setAnswerText] = useState('');
-  const [result, setResult] = useState<AnswerResponse | null>(null);
+  const [freshOutcome, setFreshOutcome] = useState<Outcome | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const submitMutation = useMutation({
-    mutationFn: (question: Question) => submitAnswer(question.id, answerText),
-    onSuccess: (response) => setResult(response),
+    mutationFn: (question: Question) =>
+      submitAnswer(question.id, answerText, { idempotencyKey: newIdempotencyKey() }),
+    onSuccess: (response) => {
+      setFreshOutcome({ isCorrect: response.isCorrect, explanation: response.explanation, xpAwarded: response.xpAwarded });
+      queryClient.invalidateQueries({ queryKey: ['progress'] });
+    },
+    onError: (e) => {
+      setSubmitError(e instanceof ApiError ? e.message : '제출에 실패했습니다. 다시 시도해 주세요.');
+    },
   });
 
-  if (isLoading || !quizSet) {
+  if (isLoading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator />
@@ -43,12 +69,25 @@ export default function TodayQuizScreen() {
     );
   }
 
+  if (error || !quizSet) {
+    const noQuiz = error instanceof ApiError && error.code === 'NO_QUIZ_TODAY';
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.resultBody}>
+          {noQuiz ? '오늘의 퀴즈가 아직 준비되지 않았어요. 잠시 후 다시 확인해 주세요.' : '퀴즈를 불러오지 못했어요.'}
+        </Text>
+      </View>
+    );
+  }
+
   const question = quizSet.questions[questionIndex];
   const isLastQuestion = questionIndex === quizSet.questions.length - 1;
+  const outcome = freshOutcome ?? outcomeOf(question);
 
   function goToNextQuestion() {
     setAnswerText('');
-    setResult(null);
+    setFreshOutcome(null);
+    setSubmitError(null);
     setQuestionIndex((index) => Math.min(index + 1, quizSet!.questions.length - 1));
   }
 
@@ -68,34 +107,36 @@ export default function TodayQuizScreen() {
         </Text>
       </Pressable>
 
-      <TextInput
-        style={styles.input}
-        placeholder="답을 입력하세요"
-        value={answerText}
-        onChangeText={setAnswerText}
-        editable={!result}
-      />
-
-      {!result && (
-        <Pressable
-          style={[styles.submitButton, !answerText && styles.submitButtonDisabled]}
-          disabled={!answerText || submitMutation.isPending}
-          onPress={() => submitMutation.mutate(question)}
-        >
-          <Text style={styles.submitButtonText}>
-            {submitMutation.isPending ? '채점 중...' : '제출하기'}
-          </Text>
-        </Pressable>
+      {!outcome && (
+        <>
+          <TextInput
+            style={styles.input}
+            placeholder="답을 입력하세요"
+            value={answerText}
+            onChangeText={setAnswerText}
+          />
+          <Pressable
+            style={[styles.submitButton, !answerText.trim() && styles.submitButtonDisabled]}
+            disabled={!answerText.trim() || submitMutation.isPending}
+            onPress={() => submitMutation.mutate(question)}
+          >
+            <Text style={styles.submitButtonText}>
+              {submitMutation.isPending ? '채점 중...' : '제출하기'}
+            </Text>
+          </Pressable>
+          {submitError && <Text style={styles.error}>{submitError}</Text>}
+        </>
       )}
 
-      {result && (
+      {outcome && (
         <View style={styles.resultBox}>
           <Text style={styles.resultTitle}>
-            {result.result === 'correct' && '정답입니다!'}
-            {result.result === 'incorrect' && '아쉬워요, 오답입니다'}
-            {result.result === 'pending' && '검토 중이에요'}
+            {outcome.isCorrect ? `정답입니다! +${outcome.xpAwarded} XP` : '아쉬워요, 오답입니다'}
           </Text>
-          {result.explanation && <Text style={styles.resultBody}>{result.explanation}</Text>}
+          {question.mySubmission && !freshOutcome && (
+            <Text style={styles.resultBody}>내 답: {question.mySubmission.submittedText}</Text>
+          )}
+          {outcome.explanation && <Text style={styles.resultBody}>{outcome.explanation}</Text>}
           {!isLastQuestion && (
             <Pressable style={styles.submitButton} onPress={goToNextQuestion}>
               <Text style={styles.submitButtonText}>다음 문제</Text>
@@ -112,6 +153,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 24,
   },
   container: {
     padding: 20,
@@ -173,5 +215,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#374151',
     lineHeight: 22,
+    textAlign: 'center',
+  },
+  error: {
+    color: '#B91C1C',
+    fontSize: 14,
   },
 });

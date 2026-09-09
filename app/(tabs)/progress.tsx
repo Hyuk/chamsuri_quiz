@@ -22,6 +22,7 @@ export default function ProgressScreen() {
       <View style={styles.statRow}>
         <Stat label="레벨" value={String(progress.level)} />
         <Stat label="XP" value={String(progress.xp)} />
+        <Stat label="포인트" value={`${progress.points}P`} />
         <Stat label="연속 참여" value={`${progress.streakDays}일`} />
       </View>
 

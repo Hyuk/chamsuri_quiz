@@ -1,43 +1,89 @@
 import * as SecureStore from 'expo-secure-store';
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+
+import { loginWithGoogleIdToken, type AuthUser } from '@/api/auth';
+import { setAccessToken, setUnauthorizedHandler, USE_MOCK } from '@/api/client';
+import { signInWithGoogle, signOutGoogle } from '@/lib/googleSignIn';
 
 const TOKEN_KEY = 'chamsuri_auth_token';
+const USER_KEY = 'chamsuri_auth_user';
 
 interface AuthContextValue {
   isLoading: boolean;
   isLoggedIn: boolean;
-  login: (token: string) => Promise<void>;
+  user: AuthUser | null;
+  /** 구글 로그인 시트를 띄운다. 사용자가 취소하면 false. */
+  loginWithGoogle: () => Promise<boolean>;
+  /** 백엔드 없이 동작하는 개발용 로그인. USE_MOCK일 때만 노출한다. */
+  loginMock: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+async function persistSession(token: string, user: AuthUser) {
+  setAccessToken(token);
+  await SecureStore.setItemAsync(TOKEN_KEY, token);
+  await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
+}
+
+async function clearSession() {
+  setAccessToken(null);
+  await SecureStore.deleteItemAsync(TOKEN_KEY);
+  await SecureStore.deleteItemAsync(USER_KEY);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
-    SecureStore.getItemAsync(TOKEN_KEY).then((token) => {
-      setIsLoggedIn(!!token);
+    (async () => {
+      const [token, storedUser] = await Promise.all([
+        SecureStore.getItemAsync(TOKEN_KEY),
+        SecureStore.getItemAsync(USER_KEY),
+      ]);
+      if (token && storedUser) {
+        setAccessToken(token);
+        setUser(JSON.parse(storedUser) as AuthUser);
+      }
       setIsLoading(false);
-    });
+    })();
   }, []);
 
-  async function login(token: string) {
-    await SecureStore.setItemAsync(TOKEN_KEY, token);
-    setIsLoggedIn(true);
-  }
+  const logout = useCallback(async () => {
+    await Promise.all([clearSession(), signOutGoogle()]);
+    setUser(null);
+  }, []);
 
-  async function logout() {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-    setIsLoggedIn(false);
-  }
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      logout();
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [logout]);
 
-  return (
-    <AuthContext.Provider value={{ isLoading, isLoggedIn, login, logout }}>
-      {children}
-    </AuthContext.Provider>
+  const loginWithGoogle = useCallback(async () => {
+    const idToken = await signInWithGoogle();
+    if (!idToken) return false;
+    const auth = await loginWithGoogleIdToken(idToken);
+    await persistSession(auth.accessToken, auth.user);
+    setUser(auth.user);
+    return true;
+  }, []);
+
+  const loginMock = useCallback(async () => {
+    const auth = await loginWithGoogleIdToken('mock-id-token');
+    await persistSession(auth.accessToken, auth.user);
+    setUser(auth.user);
+  }, []);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({ isLoading, isLoggedIn: user !== null, user, loginWithGoogle, loginMock, logout }),
+    [isLoading, user, loginWithGoogle, loginMock, logout],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {
@@ -45,3 +91,5 @@ export function useAuth(): AuthContextValue {
   if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 }
+
+export const canUseMockLogin = USE_MOCK;

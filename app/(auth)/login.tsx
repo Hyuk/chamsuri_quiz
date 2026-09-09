@@ -1,13 +1,32 @@
 import { Redirect } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { useAuth } from '@/lib/authContext';
+import { ApiError } from '@/api/client';
+import { canUseMockLogin, useAuth } from '@/lib/authContext';
+import { GoogleSignInUnavailableError, isGoogleSignInConfigured } from '@/lib/googleSignIn';
 
 export default function LoginScreen() {
-  const { isLoggedIn, login } = useAuth();
+  const { isLoggedIn, loginWithGoogle, loginMock } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (isLoggedIn) {
     return <Redirect href="/(tabs)" />;
+  }
+
+  async function run(action: () => Promise<unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (e) {
+      if (e instanceof GoogleSignInUnavailableError) setError(e.message);
+      else if (e instanceof ApiError) setError(`로그인에 실패했습니다 (${e.code})`);
+      else setError('로그인 중 문제가 생겼습니다. 다시 시도해 주세요.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -15,12 +34,24 @@ export default function LoginScreen() {
       <Text style={styles.title}>참수리퀴즈</Text>
       <Text style={styles.subtitle}>매일 새로운 주관식 퀴즈를 풀어보세요</Text>
 
-      <Pressable style={styles.button} onPress={() => login('mock-token')}>
-        <Text style={styles.buttonText}>이메일로 시작하기</Text>
+      <Pressable
+        style={[styles.button, (busy || !isGoogleSignInConfigured) && styles.buttonDisabled]}
+        disabled={busy || !isGoogleSignInConfigured}
+        onPress={() => run(loginWithGoogle)}
+      >
+        {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Google로 시작하기</Text>}
       </Pressable>
-      <Pressable style={[styles.button, styles.buttonSecondary]} onPress={() => login('mock-token')}>
-        <Text style={styles.buttonText}>소셜 계정으로 시작하기</Text>
-      </Pressable>
+      {!isGoogleSignInConfigured && (
+        <Text style={styles.help}>구글 클라이언트 ID(EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID)가 설정되지 않았습니다.</Text>
+      )}
+
+      {canUseMockLogin && (
+        <Pressable style={[styles.button, styles.buttonSecondary]} disabled={busy} onPress={() => run(loginMock)}>
+          <Text style={styles.buttonText}>개발용 mock 로그인</Text>
+        </Pressable>
+      )}
+
+      {error && <Text style={styles.error}>{error}</Text>}
     </View>
   );
 }
@@ -50,6 +81,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
   buttonSecondary: {
     backgroundColor: '#374151',
   },
@@ -57,5 +91,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
     fontSize: 16,
+  },
+  help: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  error: {
+    fontSize: 14,
+    color: '#B91C1C',
+    textAlign: 'center',
   },
 });

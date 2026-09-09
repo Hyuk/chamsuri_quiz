@@ -18,8 +18,10 @@
 
 지원 예정 소셜 로그인: 최종적으로는 **카카오, 네이버, 구글, 애플**을 목표로 하되, **1차 구현은 구글만** 진행. `AuthProvider` enum으로 확장 가능하게 설계해둠 (`chamsuri_quiz_backend`).
 
+**구현 완료 (2026-09-10)**: 앱은 `@react-native-google-signin/google-signin`으로 구글 ID 토큰을 받아 `POST /v1/auth/google`에 전달, 서버는 구글 JWKS로 서명·iss·aud를 검증한 뒤 자체 HS256 JWT(30일)를 발급. 검증된 이메일이 있는 계정만 허용, 같은 이메일의 기존 유저(탈퇴 포함)는 재활성화·연결. 리프레시 토큰은 없음(만료 시 재로그인).
+
 ## 확인/설계 필요 사항 (다음에 구체화)
-- 구글 OAuth 클라이언트 ID/시크릿 발급 (Google Cloud Console) — iOS/Android/Web 클라이언트 각각 필요
+- 구글 OAuth 클라이언트 ID 발급 (Google Cloud Console) — Web(idToken 발급용, 필수)·iOS·Android(SHA-1 등록) 각각. 발급 후 앱 `.env`와 백엔드 `GOOGLE_CLIENT_IDS`에 동일하게 등록
 - 카카오/네이버/애플 추가 시점 및 우선순위 (애플은 iOS 앱스토어에 다른 소셜 로그인을 제공하면 Sign in with Apple 필수 포함 요건이 있음 — 정식 출시 전 재확인 필요)
 - Expo 앱에서는 `expo-auth-session`으로 구글 OAuth 플로우 처리 후, 백엔드로 idToken 전달 → 서버에서 검증 및 자체 세션/JWT 발급하는 구조로 설계
 - 최초 가입 시 필요한 최소 정보(닉네임 등) 별도 온보딩 화면 필요 여부 검토
