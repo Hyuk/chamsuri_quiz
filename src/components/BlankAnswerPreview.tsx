@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 interface Props {
   wordLengths: number[];
@@ -35,7 +35,3 @@ const styles = StyleSheet.create({
     backgroundColor: '#C7CDD6',
   },
 });
-
-export function blankAnswerLabel({ wordLengths }: Props): string {
-  return wordLengths.map((length) => '○'.repeat(length)).join('  ');
-}

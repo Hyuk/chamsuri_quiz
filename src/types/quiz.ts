@@ -1,8 +1,9 @@
-export type HintSourceType = 'blog' | 'affiliate';
+// 백엔드(chamsuri_quiz_backend)·관리자(chamsuri_quiz_admin)와 같은 필드명/enum 표기를 쓴다.
+export type HintSourceType = 'BLOG' | 'AFFILIATE';
 
 export interface Question {
-  id: string;
-  order: number;
+  id: number;
+  orderIndex: number;
   prompt: string;
   answerWordLengths: number[];
   hintSourceType: HintSourceType;
@@ -12,7 +13,7 @@ export interface Question {
 }
 
 export interface QuizSet {
-  date: string;
+  quizDate: string;
   questions: Question[];
 }
 
@@ -34,7 +35,7 @@ export interface UserProgress {
 }
 
 export interface DisputeSubmission {
-  questionId: string;
+  questionId: number;
   submittedAnswer: string;
   reason: string;
 }

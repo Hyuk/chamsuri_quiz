@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -11,10 +11,14 @@ import {
   View,
 } from 'react-native';
 
-import { getTodayQuiz, logAppOpenAdImpression, submitAnswer } from '@/api/quiz';
-import { recordAppOpenAdShown, shouldShowAppOpenAd } from '@/lib/appOpenAdGate';
+import { getTodayQuiz, submitAnswer } from '@/api/quiz';
 import { BlankAnswerPreview } from '@/components/BlankAnswerPreview';
 import type { AnswerResponse, Question } from '@/types/quiz';
+
+function openHint(url: string) {
+  if (!/^https?:\/\//i.test(url)) return;
+  WebBrowser.openBrowserAsync(url);
+}
 
 export default function TodayQuizScreen() {
   const { data: quizSet, isLoading } = useQuery({
@@ -25,15 +29,6 @@ export default function TodayQuizScreen() {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answerText, setAnswerText] = useState('');
   const [result, setResult] = useState<AnswerResponse | null>(null);
-
-  useEffect(() => {
-    shouldShowAppOpenAd().then(async (shouldShow) => {
-      if (!shouldShow) return;
-      await logAppOpenAdImpression();
-      await recordAppOpenAdShown();
-      // TODO: trigger native App Open Ad SDK here once react-native-google-mobile-ads is wired up.
-    });
-  }, []);
 
   const submitMutation = useMutation({
     mutationFn: (question: Question) => submitAnswer(question.id, answerText),
@@ -67,12 +62,9 @@ export default function TodayQuizScreen() {
 
       <BlankAnswerPreview wordLengths={question.answerWordLengths} />
 
-      <Pressable
-        style={styles.hintButton}
-        onPress={() => WebBrowser.openBrowserAsync(question.hintUrl)}
-      >
+      <Pressable style={styles.hintButton} onPress={() => openHint(question.hintUrl)}>
         <Text style={styles.hintButtonText}>
-          {question.hintSourceType === 'blog' ? '블로그에서 힌트 보기' : '관련 상품에서 힌트 보기'}
+          {question.hintSourceType === 'BLOG' ? '블로그에서 힌트 보기' : '관련 상품에서 힌트 보기'}
         </Text>
       </Pressable>
 

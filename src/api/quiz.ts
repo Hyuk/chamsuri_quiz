@@ -17,7 +17,7 @@ export async function getTodayQuiz(): Promise<QuizSet> {
 }
 
 export async function submitAnswer(
-  questionId: string,
+  questionId: number,
   answerText: string,
 ): Promise<AnswerResponse> {
   if (USE_MOCK) {
